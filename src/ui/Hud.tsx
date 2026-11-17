@@ -55,8 +55,8 @@ export function Hud({ session }: { session: FlightSession }) {
   }, [session]);
 
   const cell = "flex flex-col items-start";
-  const label = "text-[10px] uppercase tracking-[0.18em] text-white/55";
-  const value = "font-mono text-xl tabular-nums text-white";
+  const label = "text-[11px] uppercase tracking-[0.16em] text-white/80";
+  const value = "font-mono text-2xl tabular-nums text-white";
 
   return (
     <div ref={root} className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between p-5 text-white [text-shadow:0_1px_3px_rgba(0,0,0,0.8)]">

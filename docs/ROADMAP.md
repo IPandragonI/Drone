@@ -82,3 +82,10 @@ Status legend: [x] done, [~] partial / approximation, [ ] not started.
 - [x] Logo from `new_logo.png` traced to vector; favicon, Apple/PWA icons and in-app logos regenerated
 - [x] Three new maps (forest, desert wind farm, harbor) with three new missions; registry-driven menus and default skies
 - [~] Maps are procedural blockouts (trees are stacked cylinders, turbines are boxes and cylinders); no terrain heightmap, no moving water or turbine rotation
+
+## v1.3 prioritised fixes (done)
+- [x] P0: debug hook gated; phone relay configurable/hostable with an honest "unavailable" state; flight-area limits; first-run guidance and Angle default; F3 performance overlay + slow-machine hint
+- [~] P0: GPU frame rates are still unmeasured (software rendering only): use F3 on real hardware. Flight feel still needs real pilots: the Tuning screen exists so they can adjust it
+- [x] P1: keyboard layout detection + rebinding; rates/expo/levelling tuning UI; inverted-attitude recovery; collider covers props; crash reasons, restart button, optional auto-restart; pause menu;
+      HUD legibility/overlap; training, unlocks, difficulty tiers; par times anchored to reference flights
+- [ ] Not done by request: CI. Not done: human-validated mission balance, tuning presets, ghost/leaderboards

@@ -179,7 +179,9 @@ export function ControllerSettings({ embedded = false }: { embedded?: boolean } 
       <div className="flex gap-3">
         <button
           onClick={async () => {
-            await saveControlSettings(settings);
+            const latest = await loadControlSettings(); // keep keyboard bindings and tuning saved elsewhere on this page
+            latest.gamepad = settings.gamepad;
+            await saveControlSettings(latest);
             setSaved(true);
           }}
           className="bg-white px-6 py-2 text-xs font-semibold uppercase tracking-[0.15em] text-black hover:bg-amber-400"

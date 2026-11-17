@@ -9,6 +9,7 @@ import type { WeatherPreset } from "@/sim/wind";
 import type { FlightMode } from "@/sim/types";
 import { loadGameSettings } from "@/storage/gameSettings";
 import { loadSelectedDrone } from "@/storage/selection";
+import { loadProgress } from "@/storage/progress";
 
 const QUALITIES: GraphicsQuality[] = ["low", "medium", "high"];
 const WEATHERS: WeatherPreset[] = ["calm", "breeze", "gusty"];
@@ -20,12 +21,15 @@ export function HomeMenu() {
   const [droneId, setDroneId] = useState(DRONE_LIST[0].id);
   const drone = DRONE_LIST.find((d) => d.id === droneId) ?? DRONE_LIST[0];
   const [modeSel, setModeSel] = useState<FlightMode | null>(null);
-  const mode: FlightMode = modeSel && drone.flightModes.includes(modeSel) ? modeSel : drone.defaultMode;
+  // Angle (self-levelling) is the default for everyone: Acro is one click away but should be a choice, not a trap.
+  const mode: FlightMode = modeSel && drone.flightModes.includes(modeSel) ? modeSel : drone.flightModes.includes("angle") ? "angle" : drone.defaultMode;
+  const [firstTime, setFirstTime] = useState(false);
   const [quality, setQuality] = useState<GraphicsQuality>("medium");
   const [weather, setWeather] = useState<WeatherPreset>("calm");
 
   useEffect(() => {
     loadGameSettings().then((s) => setQuality(s.graphics.quality));
+    loadProgress().then((p) => setFirstTime(p.stats.flights === 0 && p.stats.missionsAttempted === 0));
     // The drone picked in the showcase becomes the default for the next flight.
     loadSelectedDrone().then((id) => id && DRONE_LIST.some((d) => d.id === id) && setDroneId(id));
   }, []);
@@ -63,6 +67,12 @@ export function HomeMenu() {
             controller.
           </p>
 
+          {firstTime && (
+            <Link data-testid="first-time" href="/fly?mission=training-takeoff" className="mt-8 block max-w-xl border border-amber-400/60 bg-amber-400/10 px-5 py-4 hover:bg-amber-400/20">
+              <div className="font-mono text-[11px] uppercase tracking-[0.25em] text-amber-300">First time flying?</div>
+              <div className="mt-1 text-sm text-white/80">Start with Training: two short guided flights in a calm drone with self-levelling. Takes about two minutes.</div>
+            </Link>
+          )}
           <div className="mt-8 flex flex-wrap gap-3">
             <Link
               data-testid="start-free"

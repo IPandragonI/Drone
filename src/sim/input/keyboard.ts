@@ -8,6 +8,7 @@ import { clamp } from "./normalize";
 export class KeyboardInput {
   private held = new Set<string>();
   private lookup = new Map<string, KeyAction>();
+  private current: KeyBindings = DEFAULT_KEY_BINDINGS;
   private pressedQueue: KeyAction[] = [];
   private roll = 0;
   private pitch = 0;
@@ -19,7 +20,12 @@ export class KeyboardInput {
     this.setBindings(bindings);
   }
 
+  getBindings(): KeyBindings {
+    return this.current;
+  }
+
   setBindings(bindings: KeyBindings): void {
+    this.current = bindings;
     this.lookup.clear();
     for (const action of Object.keys(bindings) as KeyAction[]) {
       for (const k of bindings[action]) this.lookup.set(k.toLowerCase(), action);

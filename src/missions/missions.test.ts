@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildEnvironment } from "@/env/registry";
 import { MISSIONS } from "./defs";
 import { COLLISION_PENALTY, HEALTH_BONUS_MAX, MissionRunner, POINTS_PER_WAYPOINT, TIME_BONUS_MAX, maxScore, medalFor } from "./runner";
+import { DRONES } from "@/config/drones";
 import { validateMission } from "./validate";
 import { HISTORY_LIMIT, applyFlight, applyResult, emptyProgress, mergeProgress } from "./progress";
 import type { MissionResult } from "./types";
@@ -10,7 +11,9 @@ import type { MissionResult } from "./types";
 describe("built-in missions", () => {
   for (const def of MISSIONS) {
     it(`${def.id}: waypoints are in free space and the route is flyable`, () => {
-      expect(validateMission(def, buildEnvironment(def.envId))).toEqual([]);
+      // Clearance = the drone's collider half-diagonal plus a margin, so bigger drones need roomier routes.
+      const h = DRONES[def.droneId].physics.colliderHalfExtents;
+      expect(validateMission(def, buildEnvironment(def.envId), Math.hypot(h[0], h[2]) + 0.12)).toEqual([]);
     });
   }
   it("have unique ids", () => {
@@ -18,7 +21,7 @@ describe("built-in missions", () => {
   });
 });
 
-const sample = MISSIONS[0];
+const sample = MISSIONS.find((m) => m.id === "hall-slalom")!;
 const at = (i: number) => sample.waypoints[i].position;
 const ok = { crashed: false, health: 1 };
 
@@ -175,5 +178,63 @@ describe("progress", () => {
     expect(m.best.b).toBeUndefined();
     expect(m.history).toHaveLength(1);
     expect(m.stats).toMatchObject({ flights: 0, crashes: 2 });
+  });
+});
+
+describe("progression and difficulty", () => {
+  it("locks missions until their requirements are completed on any difficulty; unlockAll overrides", async () => {
+    const { isUnlocked, bestKey } = await import("./progress");
+    const gates = MISSIONS.find((m) => m.id === "training-gates")!;
+    const slalom = MISSIONS.find((m) => m.id === "hall-slalom")!;
+    const outdoor = MISSIONS.find((m) => m.id === "pine-trail")!;
+    let p = emptyProgress();
+    expect(MISSIONS.find((m) => m.id === "training-takeoff")!.requires).toBeUndefined();
+    expect(isUnlocked(gates, p)).toBe(false);
+    expect(isUnlocked(slalom, p)).toBe(false);
+    expect(isUnlocked(slalom, p, true)).toBe(true);
+    p = applyResult(p, res({ missionId: "training-takeoff" }));
+    expect(isUnlocked(gates, p)).toBe(true);
+    p = applyResult(p, res({ missionId: "training-gates", difficulty: "easy" }));
+    expect(isUnlocked(slalom, p)).toBe(true);
+    expect(isUnlocked(outdoor, p)).toBe(false);
+    expect(Object.keys(p.best)).toContain(bestKey("training-gates", "easy"));
+    p = applyResult(p, res({ missionId: "hall-slalom" }));
+    expect(isUnlocked(outdoor, p)).toBe(true);
+  });
+
+  it("keeps separate bests per difficulty and scales the time limit", async () => {
+    const { scaleMission } = await import("./runner");
+    let p = emptyProgress();
+    p = applyResult(p, res({ score: 900 }));
+    p = applyResult(p, res({ score: 1200, difficulty: "hard", medal: "gold" }));
+    expect(p.best["hall-slalom"].score).toBe(900);
+    expect(p.best["hall-slalom:hard"].score).toBe(1200);
+    const easy = scaleMission(sample, "easy");
+    const hard = scaleMission(sample, "hard");
+    expect(easy.timeLimit).toBeGreaterThan(sample.timeLimit);
+    expect(hard.timeLimit).toBeLessThan(sample.timeLimit);
+    expect(scaleMission(sample, "normal")).toBe(sample);
+    expect(new MissionRunner(hard, "hard").difficulty).toBe("hard");
+  });
+
+  it("records the difficulty in the result", () => {
+    const r = new MissionRunner(sample, "easy");
+    r.start(0);
+    r.update(1, at(0), { crashed: true, health: 0 });
+    expect(r.result()!.difficulty).toBe("easy");
+  });
+});
+
+describe("par times and limits", () => {
+  it("are anchored to the autopilot reference flights: par achievable, limit generous", async () => {
+    const { REFERENCE_FLIGHT_S } = await import("./defs");
+    for (const m of MISSIONS) {
+      const ref = REFERENCE_FLIGHT_S[m.id];
+      expect(ref, `${m.id} has a reference time`).toBeGreaterThan(0);
+      expect(m.parTime).toBeGreaterThanOrEqual(Math.min(ref * 1.5, 15));
+      expect(m.parTime).toBeLessThan(Math.max(ref * 2.5, 20)); // tiny missions keep a 15 s floor
+      expect(m.timeLimit).toBeGreaterThanOrEqual(ref * 3);
+      expect(m.timeLimit).toBeGreaterThan(m.parTime);
+    }
   });
 });

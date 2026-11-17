@@ -1,4 +1,6 @@
 import { DEFAULT_AXIS_SHAPING, type AxisShaping } from "@/sim/input/normalize";
+import type { KeyAction, KeyboardLayout } from "./controls";
+import { mergeTuning, type DroneTuning } from "./tuning";
 
 export type StickMode = 1 | 2;
 
@@ -41,16 +43,37 @@ export const DEFAULT_GAMEPAD_PROFILE: GamepadProfile = {
   buttons: { reset: 3, pause: 9, camera: 2, cycleMode: 5 },
 };
 
-export interface ControlSettings {
-  gamepad: GamepadProfile;
+export interface KeyboardSettings {
+  /** "auto" detects the physical layout (AZERTY/QWERTY) at flight start. */
+  layout: "auto" | KeyboardLayout;
+  /** The pilot's own bindings per action, on top of the layout defaults. */
+  overrides: Partial<Record<KeyAction, string[]>>;
 }
 
-export const DEFAULT_CONTROL_SETTINGS: ControlSettings = { gamepad: DEFAULT_GAMEPAD_PROFILE };
+export interface ControlSettings {
+  gamepad: GamepadProfile;
+  keyboard: KeyboardSettings;
+  /** Per-drone flight tuning (rates, expo, self-levelling), keyed by drone id. */
+  droneTuning: Record<string, DroneTuning>;
+}
+
+export const DEFAULT_CONTROL_SETTINGS: ControlSettings = { gamepad: DEFAULT_GAMEPAD_PROFILE, keyboard: { layout: "auto", overrides: {} }, droneTuning: {} };
 
 /** Merge stored (possibly older/invalid) settings over defaults, validating every field. */
 export function mergeControlSettings(stored: unknown): ControlSettings {
   const d = structuredClone(DEFAULT_CONTROL_SETTINGS);
   if (!stored || typeof stored !== "object") return d;
+  const st = stored as { keyboard?: { layout?: unknown; overrides?: unknown }; droneTuning?: unknown };
+  if (st.keyboard && typeof st.keyboard === "object") {
+    if (st.keyboard.layout === "azerty" || st.keyboard.layout === "qwerty") d.keyboard.layout = st.keyboard.layout;
+    if (st.keyboard.overrides && typeof st.keyboard.overrides === "object") d.keyboard.overrides = st.keyboard.overrides as KeyboardSettings["overrides"];
+  }
+  if (st.droneTuning && typeof st.droneTuning === "object") {
+    for (const [id, v] of Object.entries(st.droneTuning as Record<string, unknown>)) {
+      const t = mergeTuning(v);
+      if (Object.keys(t).length) d.droneTuning[id] = t;
+    }
+  }
   const g = (stored as { gamepad?: Partial<GamepadProfile> }).gamepad;
   if (!g || typeof g !== "object") return d;
   const out = d.gamepad;

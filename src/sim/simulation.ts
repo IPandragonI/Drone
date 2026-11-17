@@ -58,6 +58,11 @@ export class Simulation {
     if (!this.windModel) this.wind.set(0, 0, 0);
   }
 
+  /** End the flight with a reason (e.g. the pilot left the flight area). */
+  forceCrash(reason: string): void {
+    if (!this.crashed) this.setCrashed({ severity: "critical", reason });
+  }
+
   /** Move the drone (velocities zeroed). Used by the debug hook and tests only. */
   debugTeleport(x: number, y: number, z: number): void {
     this.body.setTranslation({ x, y, z }, true);

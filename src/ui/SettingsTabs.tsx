@@ -6,9 +6,10 @@ import { AudioEngine } from "@/audio/engine";
 import { DEFAULT_GAME_SETTINGS, type GameSettings } from "@/config/gameSettings";
 import { loadGameSettings, saveGameSettings } from "@/storage/gameSettings";
 import { ControllerSettings } from "./ControllerSettings";
+import { KeyBindingsPanel, TuningPanel } from "./ControlPanels";
 
-type Tab = "controls" | "audio" | "graphics" | "camera" | "accessibility";
-const TABS: Tab[] = ["controls", "audio", "graphics", "camera", "accessibility"];
+type Tab = "controls" | "tuning" | "audio" | "graphics" | "camera" | "accessibility" | "gameplay";
+const TABS: Tab[] = ["controls", "tuning", "audio", "graphics", "camera", "accessibility", "gameplay"];
 
 function Slider({ label, value, min, max, step, format, onChange, testId }: { label: string; value: number; min: number; max: number; step: number; format?: (v: number) => string; onChange: (v: number) => void; testId?: string }) {
   return (
@@ -68,7 +69,7 @@ export function SettingsTabs() {
       <div className="mb-4 flex items-baseline justify-between border-b border-white/15 pb-3">
         <h1 className="text-2xl font-semibold uppercase tracking-tight">Settings</h1>
         <div className="flex items-baseline gap-4">
-          {tab !== "controls" && (
+          {tab !== "controls" && tab !== "tuning" && (
             <span data-testid="gs-saved" className="font-mono text-[11px] uppercase tracking-[0.15em] text-emerald-400">
               {saved ? "Saved" : ""}
             </span>
@@ -93,9 +94,15 @@ export function SettingsTabs() {
         ))}
       </div>
 
-      {tab === "controls" && <ControllerSettings embedded />}
+      {tab === "controls" && (
+        <>
+          <ControllerSettings embedded />
+          <KeyBindingsPanel />
+        </>
+      )}
+      {tab === "tuning" && <TuningPanel />}
 
-      {tab !== "controls" && !gs && <div className="font-mono text-sm text-white/60">LOADING</div>}
+      {tab !== "controls" && tab !== "tuning" && !gs && <div className="font-mono text-sm text-white/60">LOADING</div>}
 
       {gs && tab === "audio" && (
         <div className="space-y-5">
@@ -135,6 +142,29 @@ export function SettingsTabs() {
           {g.camera.fpvFov !== null && <Slider testId="fov" label="FPV field of view" value={g.camera.fpvFov} min={60} max={150} step={1} format={(v) => `${v.toFixed(0)}°`} onChange={(v) => update((s) => (s.camera.fpvFov = v))} />}
           <Slider label="Camera vibration" value={g.camera.vibration} min={0} max={1} step={0.05} format={pct} onChange={(v) => update((s) => (s.camera.vibration = v))} />
           <Slider label="Chase camera distance" value={g.camera.chaseDistanceScale} min={0.5} max={2} step={0.05} format={(v) => `x${v.toFixed(2)}`} onChange={(v) => update((s) => (s.camera.chaseDistanceScale = v))} />
+        </div>
+      )}
+
+      {gs && tab === "gameplay" && (
+        <div className="space-y-6">
+          <div>
+            <div className="mb-2 text-[11px] uppercase tracking-[0.2em] text-white/50">Auto-restart after a crash</div>
+            <div className="flex gap-2">
+              {[0, 3, 5, 8].map((n) => (
+                <button
+                  key={n}
+                  data-testid={`autorestart-${n}`}
+                  onClick={() => update((c) => (c.gameplay.autoRestartSec = n))}
+                  className={`border px-4 py-2 text-xs uppercase tracking-[0.15em] ${g.gameplay.autoRestartSec === n ? "border-amber-400 bg-amber-400 text-black" : "border-white/20 text-white/70"}`}
+                >
+                  {n === 0 ? "Off" : `${n} s`}
+                </button>
+              ))}
+            </div>
+            <p className="mt-2 text-xs text-white/45">Off: wait for you to press Restart. Missions always show their result card first.</p>
+          </div>
+          <Toggle testId="gameplay-unlock" label="Unlock all missions (skip the progression)" value={g.gameplay.unlockAll} onChange={(v) => update((c) => (c.gameplay.unlockAll = v))} />
+          <Toggle testId="gameplay-hints" label="Show the controls hint before take-off" value={g.gameplay.showHints} onChange={(v) => update((c) => (c.gameplay.showHints = v))} />
         </div>
       )}
 

@@ -1,4 +1,4 @@
-import type { Medal, MissionResult } from "./types";
+import type { Difficulty, Medal, MissionDef, MissionResult } from "./types";
 
 export interface BestRecord {
   score: number;
@@ -27,6 +27,16 @@ export interface Progress {
 }
 
 export const HISTORY_LIMIT = 50;
+export const DIFFICULTIES: Difficulty[] = ["easy", "normal", "hard"];
+
+/** Best-score key: normal keeps the plain mission id (compatible with older saves); other tiers are suffixed. */
+export const bestKey = (id: string, difficulty: Difficulty = "normal"): string => (difficulty === "normal" ? id : `${id}:${difficulty}`);
+
+/** A mission is unlocked when every required mission was completed on any difficulty (or when the player unlocked everything). */
+export function isUnlocked(def: MissionDef, p: Progress, unlockAll = false): boolean {
+  if (unlockAll || !def.requires?.length) return true;
+  return def.requires.every((id) => DIFFICULTIES.some((d) => p.best[bestKey(id, d)]));
+}
 const MEDAL_RANK: Record<Medal, number> = { none: 0, bronze: 1, silver: 2, gold: 3 };
 
 export const emptyStats = (): FlightStats => ({ flights: 0, flightTime: 0, crashes: 0, collisions: 0, missionsAttempted: 0, missionsCompleted: 0 });
@@ -39,9 +49,10 @@ export function betterMedal(a: Medal, b: Medal): Medal {
 /** Record a finished mission attempt (immutable update). */
 export function applyResult(p: Progress, r: MissionResult): Progress {
   const best = { ...p.best };
-  const prev = best[r.missionId];
-  if (r.completed && (!prev || r.score > prev.score)) best[r.missionId] = { score: r.score, medal: r.medal, time: r.time, at: r.at };
-  else if (r.completed && prev && MEDAL_RANK[r.medal] > MEDAL_RANK[prev.medal]) best[r.missionId] = { ...prev, medal: r.medal };
+  const key = bestKey(r.missionId, r.difficulty ?? "normal");
+  const prev = best[key];
+  if (r.completed && (!prev || r.score > prev.score)) best[key] = { score: r.score, medal: r.medal, time: r.time, at: r.at };
+  else if (r.completed && prev && MEDAL_RANK[r.medal] > MEDAL_RANK[prev.medal]) best[key] = { ...prev, medal: r.medal };
   return {
     ...p,
     best,
@@ -70,6 +81,7 @@ function mergeResult(v: unknown): MissionResult | null {
   const b = (typeof r.breakdown === "object" && r.breakdown !== null ? r.breakdown : {}) as Record<string, unknown>;
   return {
     missionId: r.missionId,
+    difficulty: r.difficulty === "easy" || r.difficulty === "hard" || r.difficulty === "normal" ? r.difficulty : undefined,
     completed: r.completed,
     failReason: r.failReason === "crash" || r.failReason === "time" ? r.failReason : undefined,
     time: n(r.time),

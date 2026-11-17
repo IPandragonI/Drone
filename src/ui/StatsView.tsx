@@ -74,7 +74,7 @@ export function StatsView() {
             <tbody>
               {p.history.map((r, i) => (
                 <tr key={`${r.at}-${i}`} className="border-t border-white/10">
-                  <td className="py-2">{MISSION_BY_ID[r.missionId]?.name ?? r.missionId}</td>
+                  <td className="py-2">{MISSION_BY_ID[r.missionId]?.name ?? r.missionId}{r.difficulty && r.difficulty !== "normal" ? <span className="ml-2 text-[10px] uppercase text-white/45">{r.difficulty}</span> : null}</td>
                   <td className={r.completed ? "text-emerald-400" : "text-red-400"}>{r.completed ? (r.medal !== "none" ? r.medal : "done") : r.failReason === "time" ? "time out" : "crash"}</td>
                   <td>{r.score}</td>
                   <td>{fmt(r.time)}</td>

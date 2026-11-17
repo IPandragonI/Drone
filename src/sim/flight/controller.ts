@@ -44,6 +44,53 @@ export function attitudeAngles(q: Quaternion, out: { pitch: number; roll: number
 }
 
 const _ang = { pitch: 0, roll: 0 };
+const _ub = new Vector3();
+const _ud = new Vector3();
+const _fh = new Vector3();
+const _rh = new Vector3();
+const _axis = new Vector3();
+const _err = new Vector3();
+
+/**
+ * Attitude error as a rotation vector in the body frame (x: pitch, z: roll), from the tilt the pilot asks for.
+ * The error is the rotation taking the body "up" vector onto the desired "up" vector, so it is well defined for every
+ * attitude including inverted (the old per-axis atan2 angles were ambiguous near 180 degrees). `tiltForward` / `tiltRight`
+ * are tilt angles in radians relative to the drone's current heading.
+ */
+export function tiltError(q: Quaternion, tiltForward: number, tiltRight: number, out: { x: number; z: number }): void {
+  _ub.set(0, 1, 0).applyQuaternion(q);
+  // Heading: the nose direction on the horizontal plane; if the nose is near vertical, use the (negated) horizontal part of "up".
+  _fh.set(0, 0, -1).applyQuaternion(q);
+  _fh.y = 0;
+  if (_fh.lengthSq() < 0.0225) {
+    _fh.set(-_ub.x, 0, -_ub.z);
+    if (_fh.lengthSq() < 0.0225) _fh.set(0, 0, -1);
+  }
+  _fh.normalize();
+  _rh.set(-_fh.z, 0, _fh.x);
+  _ud.set(0, 1, 0).addScaledVector(_fh, Math.tan(tiltForward)).addScaledVector(_rh, Math.tan(tiltRight)).normalize();
+
+  _axis.crossVectors(_ub, _ud);
+  const s = _axis.length();
+  const c = _ub.dot(_ud);
+  let angle = Math.atan2(s, c);
+  if (s < 1e-6) {
+    if (c > 0) {
+      out.x = 0;
+      out.z = 0;
+      return;
+    }
+    // Exactly opposite: roll over about the body forward axis.
+    _axis.set(0, 0, -1).applyQuaternion(q);
+    angle = Math.PI;
+  } else _axis.multiplyScalar(1 / s);
+  _err.copy(_axis).multiplyScalar(angle).applyQuaternion(_qInv.copy(q).invert());
+  out.x = _err.x;
+  out.z = _err.z;
+}
+
+const _e = { x: 0, z: 0 };
+const _lvl = { x: 0, z: 0 };
 
 /**
  * Flight controller: sticks -> desired body rates -> torque command, plus collective thrust.
@@ -75,22 +122,21 @@ export function runFlightController(
   let wz = acroRoll;
 
   if (mode !== "acro") {
-    attitudeAngles(q, _ang);
     const maxTilt = p.maxTiltDeg * DEG;
-    // Angle mode targets
-    const pitchTarget = -input.pitch * maxTilt;
-    const rollTarget = -input.roll * maxTilt;
-    const angleWx = clamp(p.angleGain * (pitchTarget - _ang.pitch), -maxPitch, maxPitch);
-    const angleWz = clamp(p.angleGain * (rollTarget - _ang.roll), -maxRoll, maxRoll);
+    // Angle mode: error toward the requested tilt (forward stick = nose down, right stick = bank right).
+    tiltError(q, input.pitch * maxTilt, input.roll * maxTilt, _e);
+    const angleWx = clamp(p.angleGain * _e.x, -maxPitch, maxPitch);
+    const angleWz = clamp(p.angleGain * _e.z, -maxRoll, maxRoll);
     if (mode === "angle") {
       wx = angleWx;
       wz = angleWz;
     } else {
       // Horizon: level correction fades out with stick deflection; rate command fades in.
+      tiltError(q, 0, 0, _lvl);
       const bx = Math.abs(input.pitch);
       const bz = Math.abs(input.roll);
-      const levelX = clamp(p.angleGain * (0 - _ang.pitch), -maxPitch, maxPitch);
-      const levelZ = clamp(p.angleGain * (0 - _ang.roll), -maxRoll, maxRoll);
+      const levelX = clamp(p.angleGain * _lvl.x, -maxPitch, maxPitch);
+      const levelZ = clamp(p.angleGain * _lvl.z, -maxRoll, maxRoll);
       wx = (1 - bx) * levelX + bx * acroPitch;
       wz = (1 - bz) * levelZ + bz * acroRoll;
     }

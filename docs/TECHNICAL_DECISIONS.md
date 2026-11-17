@@ -111,3 +111,13 @@ Horizon: full stick rolls past 90 deg for all drones; released at 120 deg it lev
 29. **Water is visual.** Surfaces use a transparent water material with `collide: false` over a colliding bed, so crashing into a river or the sea is a ground impact, not a swim.
 30. **Flyability is proven, not assumed.** `environments.test.ts` checks every map for a free spawn and stable takeoff, and flies each new mission with the real autopilot.
 31. **Limits:** flat ground (no terrain mesh), static turbine blades, ~2k instanced solids in the forest. Not measured on a GPU.
+
+## v1.3 decisions
+32. **Attitude error is a rotation vector** (`tiltError`): the rotation taking body "up" to the commanded "up", expressed in the body frame. It is single-valued through inverted flight (the exact-opposite case rolls about the nose axis),
+    matches the old behaviour for single-axis tilts (all step-response tests unchanged) and is tested for recovery from 180 degrees in both axes for every drone and both self-levelling modes.
+33. **Stale-link timeout adapts to the host.** `max(300 ms, 3 x host frame gap)`: a slow host no longer mistakes its own stalls for a lost phone, while a genuinely silent link is still cut.
+34. **Colliders cover the prop span** (motor offset + prop radius). Mission routes are validated with a per-drone clearance (collider half-diagonal + margin).
+35. **Flight area:** horizontal limits from `env.bounds` (14 m warning band, 6 s grace). Ending the flight reuses the crash path, so replay, stats and missions behave normally.
+36. **Mission progression is data** (`requires`); difficulty only scales time (par and limit together), plus the collision thresholds already in the sim. Bests are keyed per difficulty (`id`, `id:easy`, `id:hard`).
+37. **Debug hooks are build-time gated** (`NEXT_PUBLIC_ENABLE_DEBUG`), not URL-gated.
+38. **Hosted relay mode** is opt-in (`RELAY_PUBLIC=1`): session cap, per-address creation rate limit, CORS origin check. TLS must be provided by the host. Untested on the public internet.

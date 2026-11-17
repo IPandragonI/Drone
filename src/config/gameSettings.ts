@@ -12,6 +12,14 @@ export interface GameSettings {
     chaseDistanceScale: number;
   };
   accessibility: { reduceFlashes: boolean; hudScale: number; highContrastHud: boolean; showMinimap: boolean };
+  gameplay: {
+    /** Seconds after a crash before the drone restarts by itself (0 = wait for the pilot). */
+    autoRestartSec: number;
+    /** Show the controls hint before take-off. */
+    showHints: boolean;
+    /** Skip the mission unlock chain. */
+    unlockAll: boolean;
+  };
 }
 
 export const DEFAULT_GAME_SETTINGS: GameSettings = {
@@ -19,6 +27,7 @@ export const DEFAULT_GAME_SETTINGS: GameSettings = {
   graphics: { quality: "medium" },
   camera: { fpvFov: null, vibration: 1, chaseDistanceScale: 1 },
   accessibility: { reduceFlashes: false, hudScale: 1, highContrastHud: false, showMinimap: true },
+  gameplay: { autoRestartSec: 0, showHints: true, unlockAll: false },
 };
 
 const num = (v: unknown, lo: number, hi: number, fallback: number): number =>
@@ -34,6 +43,7 @@ export function mergeGameSettings(raw: unknown): GameSettings {
   const g = obj(r.graphics);
   const c = obj(r.camera);
   const x = obj(r.accessibility);
+  const gp = obj(r.gameplay);
   return {
     audio: {
       master: num(a.master, 0, 1, d.audio.master),
@@ -53,5 +63,6 @@ export function mergeGameSettings(raw: unknown): GameSettings {
       highContrastHud: bool(x.highContrastHud, d.accessibility.highContrastHud),
       showMinimap: bool(x.showMinimap, d.accessibility.showMinimap),
     },
+    gameplay: { autoRestartSec: [0, 3, 5, 8].includes(gp.autoRestartSec as number) ? (gp.autoRestartSec as number) : 0, showHints: bool(gp.showHints, true), unlockAll: bool(gp.unlockAll, false) },
   };
 }

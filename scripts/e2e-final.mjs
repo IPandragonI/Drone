@@ -113,7 +113,7 @@ try {
   await page.goto(`${base}/missions`);
   await page.waitForSelector('[data-testid="mission-hall-slalom"]');
   const cards = await page.locator('[data-testid^="best-"]').count();
-  check("missions list shows the 7 built-in missions, none flown yet", cards === 7 && /not flown/i.test(await text('[data-testid="best-hall-slalom"]')), `${cards} cards`);
+  check("missions list shows the 9 built-in missions, none flown yet", cards === 9 && /not flown/i.test(await text('[data-testid="best-hall-slalom"]')), `${cards} cards`);
 
   await page.goto(`${base}/fly?mission=hall-slalom&debug=1`);
   await page.waitForSelector('[data-testid="mission-briefing"]', { timeout: 60000 });

@@ -6,7 +6,8 @@ import { KeyboardInput } from "./input/keyboard";
 import { RemoteInput } from "./input/remote";
 import { normalizeInput } from "./input/normalize";
 import type { MissionResult, MissionStatus } from "@/missions/types";
-import { MissionRunner } from "@/missions/runner";
+import { MissionRunner, scaleMission } from "@/missions/runner";
+import { BOUNDS_GRACE_S, boundsState, type BoundsState } from "./bounds";
 import { FlightRecorder } from "./replay";
 import type { Simulation } from "./simulation";
 import type { FlightMode } from "./types";
@@ -20,6 +21,11 @@ export interface ViewState {
   status: "flying" | "crashed" | "paused";
   launched: boolean;
   replaying: boolean;
+  /** Flight-area state and, when outside, whole seconds left before the flight ends. */
+  bounds: BoundsState;
+  boundsSecondsLeft: number;
+  /** Human-readable reason for the last crash (null while flying). */
+  crashReason: string | null;
   missionStatus: MissionStatus | null;
 }
 
@@ -45,6 +51,10 @@ export class FlightSession {
   private replayT = 0;
   private cameraBeforeReplay: CameraMode = "fpv";
   private crashAt: number | null = null;
+  private boundsNow: BoundsState = "ok";
+  private outTimer = 0;
+  private secondsShown = BOUNDS_GRACE_S;
+  crashReason: string | null = null;
   private flightTimeAcc = 0;
   private collisionCount = 0;
   private crashCount = 0;
@@ -68,7 +78,13 @@ export class FlightSession {
         this.mission?.onCollision(e.severity);
       }),
     );
-    this.unsubSim.push(sim.on("crash", () => this.crashCount++));
+    this.unsubSim.push(
+      sim.on("crash", (e) => {
+        this.crashCount++;
+        this.crashReason = "reason" in e ? (e.reason === "out-of-bounds" ? "Fell out of the world" : e.reason) : `Hard impact (${e.impactSpeed.toFixed(0)} m/s)`;
+        this.notify();
+      }),
+    );
     this.sim.getRenderPose(this.pose.position, this.pose.quaternion);
   }
 
@@ -96,6 +112,9 @@ export class FlightSession {
       status: this.sim.status,
       launched: this.launched,
       replaying: this.replaying,
+      bounds: this.boundsNow,
+      boundsSecondsLeft: this.secondsShown,
+      crashReason: this.sim.crashed ? this.crashReason : null,
       missionStatus: this.mission?.status ?? null,
     };
   }
@@ -105,9 +124,30 @@ export class FlightSession {
     return { time: this.flightTimeAcc + (this.launched ? this.sim.flightTime : 0), crashes: this.crashCount, collisions: this.collisionCount };
   }
 
-  setMission(def: import("@/missions/types").MissionDef | null): void {
-    this.mission = def ? new MissionRunner(def) : null;
+  setMission(def: import("@/missions/types").MissionDef | null, difficulty: import("@/missions/types").Difficulty = "normal"): void {
+    this.mission = def ? new MissionRunner(scaleMission(def, difficulty), difficulty) : null;
     this.notify();
+  }
+
+  /** Reset to the spawn point (the same thing the Reset key does). */
+  restart(): void {
+    this.stopReplay();
+    this.input.neutralize();
+    this.flightTimeAcc += this.launched ? this.sim.flightTime : 0;
+    this.sim.reset();
+    this.launched = false;
+    this.mission?.reset();
+    this.recorder.clear();
+    this.crashAt = null;
+    this.crashReason = null;
+    this.outTimer = 0;
+    this.boundsNow = "ok";
+    this.secondsShown = BOUNDS_GRACE_S;
+    this.notify();
+  }
+
+  togglePauseUi(): void {
+    if (!this.replaying && !this.sim.crashed) this.sim.togglePause();
   }
 
   private startReplay(): void {
@@ -151,14 +191,7 @@ export class FlightSession {
           if (!this.replaying && !this.sim.crashed) this.sim.togglePause();
           break;
         case "reset":
-          this.stopReplay();
-          this.input.neutralize();
-          this.flightTimeAcc += this.launched ? this.sim.flightTime : 0;
-          this.sim.reset();
-          this.launched = false;
-          this.mission?.reset();
-          this.recorder.clear();
-          this.crashAt = null;
+          this.restart();
           changed = true;
           break;
         case "toggleCamera":
@@ -211,6 +244,19 @@ export class FlightSession {
     if (this.launched && !this.sim.paused) {
       if (this.sim.crashed) this.crashAt ??= this.sim.simTime;
       if (this.crashAt === null || this.sim.simTime - this.crashAt < 2) this.recorder.record(this.sim.simTime, this.pose.position, this.pose.quaternion);
+    }
+    // Flight-area limits: warn near the edge, end the flight after a grace period outside it.
+    if (this.launched && !this.sim.paused && !this.sim.crashed) {
+      const p = this.pose.position;
+      const st = boundsState(p.x, p.z, this.sim.env.bounds);
+      this.outTimer = st === "out" ? this.outTimer + Math.min(dt, 0.1) : 0;
+      const left = Math.max(0, Math.ceil(BOUNDS_GRACE_S - this.outTimer));
+      if (st !== this.boundsNow || (st === "out" && left !== this.secondsShown)) {
+        this.boundsNow = st;
+        this.secondsShown = st === "out" ? left : BOUNDS_GRACE_S;
+        changed = true;
+      }
+      if (st === "out" && this.outTimer >= BOUNDS_GRACE_S) this.sim.forceCrash("Left the flight area");
     }
     const m = this.mission;
     if (m && this.launched) {

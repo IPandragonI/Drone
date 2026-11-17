@@ -2,6 +2,28 @@ import type { RemoteInput } from "@/sim/input/remote";
 import { RtcPeer } from "./rtc";
 import { RELAY_DEFAULT_PORT, buildPadUrl, parsePadMessage, parseRelayMessage, type HostTelemetry, type PairingInfo } from "./protocol";
 
+/**
+ * Where the relay lives. NEXT_PUBLIC_RELAY_URL (e.g. https://relay.example.com) points the app at a hosted relay.
+ * Without it the relay is assumed to run on the same machine (`npm run relay`, port 3101), which cannot work from an
+ * https page (browsers block ws:// from secure pages), so the phone feature reports itself unavailable there.
+ */
+export function relayConfig(): { http: string | null; hostPort: string | null; problem: string | null } {
+  const env = process.env.NEXT_PUBLIC_RELAY_URL;
+  if (env) {
+    try {
+      const u = new URL(env);
+      return { http: u.origin, hostPort: u.host, problem: null };
+    } catch {
+      return { http: null, hostPort: null, problem: "NEXT_PUBLIC_RELAY_URL is not a valid URL." };
+    }
+  }
+  if (typeof location === "undefined") return { http: null, hostPort: null, problem: null };
+  if (location.protocol === "https:") {
+    return { http: null, hostPort: null, problem: "The phone controller needs a relay server, and none is configured for this deployment. It works when you run the simulator on your own computer (see README), or when the site is built with NEXT_PUBLIC_RELAY_URL." };
+  }
+  return { http: `http://${location.hostname}:${RELAY_DEFAULT_PORT}`, hostPort: null, problem: null };
+}
+
 export type HostLinkState = "idle" | "creating" | "waiting" | "paired" | "error";
 
 export interface HostLinkSnapshot {
@@ -32,7 +54,7 @@ export class HostLink {
   constructor(
     private readonly remote: RemoteInput,
     private readonly getTelemetry: () => Omit<HostTelemetry, "t">,
-    private readonly relayHttp: string = `http://${typeof location === "undefined" ? "localhost" : location.hostname}:${RELAY_DEFAULT_PORT}`,
+    private readonly relayHttp: string = relayConfig().http ?? "",
   ) {}
 
   get snapshot(): HostLinkSnapshot {
@@ -54,15 +76,21 @@ export class HostLink {
     this.teardownSocket();
     this.remote.setConnected(false);
     this.set({ state: "creating", error: null, padUrl: null, session: null });
+    const cfg = relayConfig();
+    if (cfg.problem || !this.relayHttp) {
+      this.set({ state: "error", error: cfg.problem ?? "No relay configured." });
+      return;
+    }
     try {
       const res = await fetch(`${this.relayHttp}/session`, { method: "POST" });
       if (!res.ok) throw new Error(`relay answered ${res.status}`);
       const info = (await res.json()) as PairingInfo;
       if (this.disposed) return;
       this.pairing = info;
-      const appHost = this.pickAppHost(info.lan);
-      const origin = `${location.protocol}//${appHost}${location.port ? `:${location.port}` : ""}`;
-      this.set({ state: "waiting", session: info.session, padUrl: buildPadUrl(origin, `${appHost}:${info.port}`, info.session, info.padToken) });
+      const hosted = cfg.hostPort !== null;
+      const appHost = hosted ? location.hostname : this.pickAppHost(info.lan);
+      const origin = hosted ? location.origin : `${location.protocol}//${appHost}${location.port ? `:${location.port}` : ""}`;
+      this.set({ state: "waiting", session: info.session, padUrl: buildPadUrl(origin, cfg.hostPort ?? `${appHost}:${info.port}`, info.session, info.padToken) });
       this.retryDelay = 250;
       this.connect();
     } catch (e) {

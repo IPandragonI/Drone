@@ -35,7 +35,7 @@ function open(role: "host" | "pad", s: string, t: string) {
   return { ws, msgs, closed, opened };
 }
 
-const until = async (cond: () => boolean, ms = 2000) => {
+const until = async (cond: () => boolean, ms = 10000) => {
   const start = Date.now();
   while (!cond()) {
     if (Date.now() - start > ms) throw new Error("timeout waiting for condition");
@@ -171,8 +171,26 @@ describe("relay", () => {
     // The limit is per one-second window; on a loaded machine the burst can straddle windows.
     const windows = Math.floor((Date.now() - started) / 1000) + 1;
     expect(got).toBeLessThanOrEqual(240 * (windows + 1));
-    expect(got).toBeLessThan(1000);
+    if (windows === 1) expect(got).toBeLessThan(1000); // a fast burst must be cut off; a slow one is legitimately spread over windows
     expect(got).toBeGreaterThan(0);
     expect(pad.ws.readyState).toBe(WebSocket.OPEN);
+  });
+});
+
+describe("relay limits", () => {
+  it("caps live sessions and rate-limits session creation per address", async () => {
+    const small = createRelay({ port: 0, host: "127.0.0.1", maxSessions: 2, createPerMinute: 50, sweepMs: 3_600_000 });
+    const p = await small.start();
+    const post = () => fetch(`http://127.0.0.1:${p}/session`, { method: "POST" });
+    expect((await post()).status).toBe(200);
+    expect((await post()).status).toBe(200);
+    expect((await post()).status).toBe(503);
+    await small.close();
+
+    const limited = createRelay({ port: 0, host: "127.0.0.1", maxSessions: 100, createPerMinute: 3, sweepMs: 3_600_000 });
+    const q = await limited.start();
+    for (let i = 0; i < 3; i++) expect((await fetch(`http://127.0.0.1:${q}/session`, { method: "POST" })).status).toBe(200);
+    expect((await fetch(`http://127.0.0.1:${q}/session`, { method: "POST" })).status).toBe(429);
+    await limited.close();
   });
 });

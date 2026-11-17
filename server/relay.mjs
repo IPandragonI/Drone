@@ -51,16 +51,31 @@ function isLocalAddress(addr) {
   return lanAddresses().includes(a);
 }
 
-export function createRelay({ port = 3101, host = "0.0.0.0", tokenTtlMs = 10 * 60_000, now = () => Date.now(), sweepMs = 5_000 } = {}) {
+export function createRelay({
+  port = 3101,
+  host = "0.0.0.0",
+  tokenTtlMs = 10 * 60_000,
+  now = () => Date.now(),
+  sweepMs = 5_000,
+  /** Hosted mode: sessions may be created from any address (the simulator page is elsewhere on the internet). Use TLS in front. */
+  publicMode = false,
+  /** Browsers allowed to talk to the relay (CORS). "*" in local mode. */
+  allowedOrigin = "*",
+  maxSessions = 200,
+  /** Session creations allowed per remote address per minute. */
+  createPerMinute = 20,
+} = {}) {
   /** @type {Map<string, any>} */
   const sessions = new Map();
+  /** @type {Map<string, number[]>} */
+  const creations = new Map();
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_PAYLOAD });
   let boundPort = port;
 
   const json = (res, status, body) => {
     res.writeHead(status, {
       "content-type": "application/json",
-      "access-control-allow-origin": "*",
+      "access-control-allow-origin": allowedOrigin,
       "access-control-allow-methods": "GET,POST,OPTIONS",
       "access-control-allow-headers": "content-type",
       "cache-control": "no-store",
@@ -73,7 +88,15 @@ export function createRelay({ port = 3101, host = "0.0.0.0", tokenTtlMs = 10 * 6
     if (req.method === "OPTIONS") return json(res, 204, {});
     if (req.method === "GET" && url.pathname === "/info") return json(res, 200, { lan: lanAddresses(), port: boundPort });
     if (req.method === "POST" && url.pathname === "/session") {
-      if (!isLocalAddress(req.socket.remoteAddress)) return json(res, 403, { error: "sessions can only be created from the machine running the simulator" });
+      if (!publicMode && !isLocalAddress(req.socket.remoteAddress)) return json(res, 403, { error: "sessions can only be created from the machine running the simulator" });
+      if (publicMode && allowedOrigin !== "*" && req.headers.origin !== allowedOrigin) return json(res, 403, { error: "origin not allowed" });
+      const ip = req.socket.remoteAddress ?? "?";
+      const t = now();
+      const hits = (creations.get(ip) ?? []).filter((x) => t - x < 60_000);
+      if (hits.length >= createPerMinute) return json(res, 429, { error: "too many sessions, slow down" });
+      if (sessions.size >= maxSessions) return json(res, 503, { error: "relay is full, try again shortly" });
+      hits.push(t);
+      creations.set(ip, hits);
       let code = randomCode(6);
       while (sessions.has(code)) code = randomCode(6);
       const s = {
@@ -128,7 +151,7 @@ export function createRelay({ port = 3101, host = "0.0.0.0", tokenTtlMs = 10 * 6
       return deny("expired");
     }
     if (role === "host") {
-      if (!isLocalAddress(req.socket.remoteAddress)) return deny("forbidden");
+      if (!publicMode && !isLocalAddress(req.socket.remoteAddress)) return deny("forbidden");
       if (!safeEqual(token, s.hostToken)) return deny("bad token");
       if (s.host) s.host.close(4001, "replaced");
       s.host = ws;

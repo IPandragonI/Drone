@@ -2,7 +2,7 @@
 
 import QRCode from "qrcode";
 import { useEffect, useRef, useState } from "react";
-import { HostLink, type HostLinkSnapshot } from "@/net/hostLink";
+import { HostLink, relayConfig, type HostLinkSnapshot } from "@/net/hostLink";
 import type { FlightSession } from "@/sim/session";
 
 const STATE_LABEL: Record<HostLinkSnapshot["state"], string> = {
@@ -56,7 +56,7 @@ export function PhonePanel({ session }: { session: FlightSession }) {
   };
 
   const toggle = () => {
-    if (!open) ensureLink();
+    if (!open && !relayConfig().problem) ensureLink();
     setOpen(!open);
   };
 
@@ -70,13 +70,14 @@ export function PhonePanel({ session }: { session: FlightSession }) {
       {open && (
         <div data-testid="phone-panel" className="w-64 border border-white/20 bg-black/80 p-3 normal-case tracking-normal text-white/80 backdrop-blur">
           <div data-testid="phone-state" className={`font-mono text-[11px] uppercase tracking-[0.15em] ${snap?.state === "error" ? "text-red-400" : paired ? "text-emerald-400" : "text-amber-400"}`}>
-            {snap ? STATE_LABEL[snap.state] : "Starting"}
+            {snap ? STATE_LABEL[snap.state] : relayConfig().problem ? "Unavailable" : "Starting"}
           </div>
           {paired && (
             <div data-testid="phone-transport" className="mt-1 font-mono text-[10px] uppercase tracking-[0.15em] text-white/50">
               {snap?.transport === "webrtc" ? "Link: WebRTC (peer-to-peer)" : "Link: WebSocket via relay"}
             </div>
           )}
+          {!snap && relayConfig().problem && <p data-testid="phone-unavailable" className="mt-2 text-xs text-amber-200">{relayConfig().problem}</p>}
           {snap?.error && <p className="mt-2 text-xs text-red-300">{snap.error}</p>}
           {snap?.padUrl && (
             <>

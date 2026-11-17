@@ -81,3 +81,24 @@ Visual verification: `node scripts/e2e-visual.mjs`.
 
 Each map has its own default sky and works with the weather presets (`?env=pine-valley|desert-wind-farm|harbor-district&sky=...`).
 Maps are procedural blockouts with a guaranteed-clear flight corridor; every mission route is checked against the geometry and flown by the autopilot in tests.
+
+## v1.3: onboarding, controls, safety and progression
+
+- **Training and unlocks:** two guided training missions (take-off/hover, three gates) unlock the hall missions; finishing Hall Slalom unlocks the outdoor missions.
+  A "First time flying?" path on the launcher leads straight to Training. Settings → Gameplay can unlock everything.
+- **Difficulty:** Easy (50% more time, forgiving impacts), Normal, Hard (20% less time, harsh impacts). Best scores are kept per difficulty.
+- **Par times** come from autopilot reference flights through the real physics (par = 1.6x, limit = 4.5x of the reference); see `REFERENCE_FLIGHT_S`.
+- **Controls:** the keyboard layout (AZERTY/QWERTY) is detected, every key can be rebound (Settings → Controls), and Settings → Tuning edits rates, expo,
+  throttle curve and self-levelling per drone with live curves. Changes apply from the next flight.
+- **In flight:** F1 shows all controls (with your real bindings), F3 shows fps/draw calls (and a "running slowly" hint appears by itself), Space/Esc opens a pause menu
+  (Resume, Restart, Settings, Exit), crashes show their reason with a Restart button (optional auto-restart in Settings → Gameplay).
+- **Flight area:** each map has limits. Near the edge you get a warning; outside it you have 6 seconds to return before the flight ends.
+- **Physics:** Angle and Horizon now recover from any attitude, including exactly upside-down (tilt-vector attitude error). Colliders now cover the full prop span.
+- **Debug hook:** `?debug=1` (teleport, `window.__session`) works only in development or in a build made with `NEXT_PUBLIC_ENABLE_DEBUG=1`. The e2e suites need such a build:
+  `NEXT_PUBLIC_ENABLE_DEBUG=1 npm run build`. A normal production build ignores it (`node scripts/e2e-prod.mjs` checks this).
+
+### Phone controller on a deployed site
+The relay is a separate process (`npm run relay`) and cannot run on Vercel. For a hosted site, run the relay on a server with long-lived WebSockets behind TLS:
+`RELAY_PUBLIC=1 RELAY_ORIGIN=https://your-site npm run relay`, then build the site with `NEXT_PUBLIC_RELAY_URL=https://relay.example.com`.
+Public mode caps live sessions (200) and rate-limits session creation per address. Without a relay the Phone panel explains that it is unavailable
+(it works when you run the simulator on your own computer). The hosted mode is implemented and unit-tested but has not been deployed or tested over the internet.

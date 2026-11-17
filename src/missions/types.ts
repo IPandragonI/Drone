@@ -1,7 +1,8 @@
 import type { FlightMode, Vec3Tuple } from "@/sim/types";
 import type { WeatherPreset } from "@/sim/wind";
 
-export type MissionKind = "course" | "inspection" | "exploration";
+export type MissionKind = "training" | "course" | "inspection" | "exploration";
+export type Difficulty = "easy" | "normal" | "hard";
 export type Medal = "gold" | "silver" | "bronze" | "none";
 
 export interface Waypoint {
@@ -25,6 +26,8 @@ export interface MissionDef {
   mode: FlightMode;
   /** Weather for outdoor environments (ignored indoors). Default calm. */
   weather?: WeatherPreset;
+  /** Mission ids that must be completed first (any difficulty). Empty/absent = always available. */
+  requires?: string[];
   /** Ordered: waypoints must be taken in sequence. Otherwise any order. */
   ordered: boolean;
   waypoints: Waypoint[];
@@ -40,6 +43,8 @@ export type MissionStatus = "ready" | "running" | "completed" | "failed";
 
 export interface MissionResult {
   missionId: string;
+  /** Absent in results saved before difficulty existed (= normal). */
+  difficulty?: Difficulty;
   completed: boolean;
   failReason?: "crash" | "time";
   time: number;

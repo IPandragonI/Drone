@@ -7,7 +7,7 @@ const first = (v: string | string[] | undefined): string | undefined => (Array.i
 
 async function Flight({ searchParams }: { searchParams: SP }) {
   const sp = await searchParams;
-  return <FlightLoader droneId={first(sp.drone)} mode={first(sp.mode)} quality={first(sp.q)} env={first(sp.env)} weather={first(sp.weather)} sky={first(sp.sky)} mission={first(sp.mission)} debug={first(sp.debug) === "1"} />;
+  return <FlightLoader droneId={first(sp.drone)} mode={first(sp.mode)} quality={first(sp.q)} env={first(sp.env)} weather={first(sp.weather)} sky={first(sp.sky)} mission={first(sp.mission)} difficulty={first(sp.difficulty)} debug={first(sp.debug) === "1"} />;
 }
 
 export default function FlyPage({ searchParams }: { searchParams: SP }) {

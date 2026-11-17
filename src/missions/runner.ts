@@ -1,10 +1,18 @@
 import type { CollisionSeverity, Vec3Tuple } from "@/sim/types";
-import type { Medal, MissionDef, MissionResult, MissionStatus, Waypoint } from "./types";
+import type { Difficulty, Medal, MissionDef, MissionResult, MissionStatus, Waypoint } from "./types";
 
 export const POINTS_PER_WAYPOINT = 100;
 export const TIME_BONUS_MAX = 300;
 export const HEALTH_BONUS_MAX = 200;
 export const COLLISION_PENALTY = 25;
+
+/** Time pressure per difficulty: easy gives more time, hard less. Par scales with the limit so the time bonus stays comparable. */
+export const DIFFICULTY_TIME_SCALE: Record<Difficulty, number> = { easy: 1.5, normal: 1, hard: 0.8 };
+
+export function scaleMission(def: MissionDef, difficulty: Difficulty): MissionDef {
+  const k = DIFFICULTY_TIME_SCALE[difficulty];
+  return k === 1 ? def : { ...def, timeLimit: Math.round(def.timeLimit * k), parTime: Math.round(def.parTime * k) };
+}
 
 export function maxScore(def: MissionDef): number {
   return def.waypoints.length * POINTS_PER_WAYPOINT + TIME_BONUS_MAX + HEALTH_BONUS_MAX;
@@ -43,7 +51,10 @@ export class MissionRunner {
   private lastSimTime = 0;
   private final: MissionResult | null = null;
 
-  constructor(readonly def: MissionDef) {}
+  constructor(
+    readonly def: MissionDef,
+    readonly difficulty: Difficulty = "normal",
+  ) {}
 
   get reachedCount(): number {
     return this.reached.size;
@@ -128,6 +139,7 @@ export class MissionRunner {
     const { score, breakdown } = computeScore(this.def, { completed, reached: this.reached.size, time: this.time, health, collisions: this.collisions });
     this.final = {
       missionId: this.def.id,
+      difficulty: this.difficulty,
       completed,
       failReason,
       time: this.time,

@@ -87,7 +87,7 @@ export function MissionOverlay({ session, view }: { session: FlightSession; view
   if (view.missionStatus === "completed" || view.missionStatus === "failed") {
     const r = m.result();
     if (!r) return null;
-    return <ResultCard result={r} name={m.def.name} />;
+    return <ResultCard result={r} name={m.def.name + (r.difficulty && r.difficulty !== "normal" ? ` (${r.difficulty})` : "")} />;
   }
   return null;
 }

@@ -10,6 +10,7 @@ import { CameraRig, type CameraSettings } from "./CameraRig";
 import { DroneModel } from "./DroneModel";
 import { EnvironmentRenderer } from "./EnvironmentRenderer";
 import { MissionMarkers } from "./MissionMarkers";
+import { PerfProbe } from "./PerfProbe";
 
 /** Advances the session once per rendered frame (before camera/model update). */
 function SimDriver({ session }: { session: FlightSession }) {
@@ -41,6 +42,7 @@ export function FlightScene({ session, quality, camera, sky }: { session: Flight
         <pointLight key={i} position={l.position} color={l.color} intensity={l.intensity} distance={l.distance} decay={2} />
       ))}
       <EnvironmentRenderer env={env} shadows={preset.shadows} textured={preset.textures} />
+      <PerfProbe />
       <DroneModel session={session} />
       {session.mission && <MissionMarkers session={session} />}
       <SimDriver session={session} />

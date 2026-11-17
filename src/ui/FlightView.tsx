@@ -3,6 +3,10 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AudioEngine } from "@/audio/engine";
+import { DEBUG_ENABLED } from "@/config/debug";
+import { bindingsFor } from "@/config/controls";
+import { applyTuning } from "@/config/tuning";
+import { detectLayout } from "@/sim/input/layout";
 import { DRONES, FPV_FREESTYLE } from "@/config/drones";
 import { DEFAULT_GAME_SETTINGS, type GameSettings } from "@/config/gameSettings";
 import { parseQuality, type GraphicsQuality } from "@/config/graphics";
@@ -20,6 +24,7 @@ import type { FlightMode, Telemetry } from "@/sim/types";
 import { Hud } from "./Hud";
 import { Minimap, type MapMarker } from "./Minimap";
 import { MissionHud, MissionOverlay } from "./MissionHud";
+import { ControlsHint, HelpOverlay, PerfOverlay, StatusOverlays } from "./FlightOverlays";
 import { PhonePanel } from "./PhonePanel";
 
 export interface FlightViewProps {
@@ -30,6 +35,7 @@ export interface FlightViewProps {
   weather?: string;
   sky?: string;
   mission?: string;
+  difficulty?: string;
   /** Expose the session on `window` for end-to-end tests. */
   debug?: boolean;
 }
@@ -62,13 +68,30 @@ function makeFlusher(session: FlightSession): () => void {
   };
 }
 
-export default function FlightView({ droneId, mode, quality, env: envId, weather, sky: skyParam, mission: missionId, debug }: FlightViewProps) {
+export default function FlightView({ droneId, mode, quality, env: envId, weather, sky: skyParam, mission: missionId, difficulty: difficultyParam, debug }: FlightViewProps) {
   const [session, setSession] = useState<FlightSession | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<ViewState | null>(null);
   const [gs, setGs] = useState<GameSettings>(DEFAULT_GAME_SETTINGS);
   const [weatherLabel, setWeatherLabel] = useState("calm");
   const flushRef = useRef<(() => void) | null>(null);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [perfOpen, setPerfOpen] = useState(false);
+
+  // F1 / ? toggles the controls help, F3 the performance panel (not rebindable: they never affect flight).
+  useEffect(() => {
+    const on = (e: KeyboardEvent) => {
+      if (e.key === "F1" || e.key === "?") {
+        e.preventDefault();
+        setHelpOpen((v) => !v);
+      } else if (e.key === "F3") {
+        e.preventDefault();
+        setPerfOpen((v) => !v);
+      } else if (e.key === "Escape") setHelpOpen(false);
+    };
+    window.addEventListener("keydown", on);
+    return () => window.removeEventListener("keydown", on);
+  }, []);
   const sky: SkyId = parseSky(skyParam, parseSky(ENV_BY_ID[(missionId ? MISSION_BY_ID[missionId]?.envId : envId) ?? ""]?.defaultSky, "cloudy"));
   const q: GraphicsQuality = quality ? parseQuality(quality) : gs.graphics.quality;
 
@@ -77,28 +100,31 @@ export default function FlightView({ droneId, mode, quality, env: envId, weather
     let created: FlightSession | null = null;
     let flushTimer: number | undefined;
     const missionDef = missionId ? MISSION_BY_ID[missionId] : undefined;
+    const difficulty = difficultyParam === "easy" || difficultyParam === "hard" ? difficultyParam : "normal";
     const drone = (missionDef ? DRONES[missionDef.droneId] : droneId && DRONES[droneId]) || FPV_FREESTYLE;
     const requested = MODES.find((m) => m === (missionDef?.mode ?? mode));
     const env = buildEnvironment(missionDef?.envId ?? envId);
     const wx = env.outdoor ? (missionDef?.weather ?? parseWeather(weather)) : "calm";
-    Promise.all([
-      Simulation.create({ env, drone, mode: requested && drone.flightModes.includes(requested) ? requested : drone.defaultMode }),
-      loadControlSettings(),
-      loadGameSettings(),
-    ])
-      .then(([sim, settings, game]) => {
+    Promise.all([loadControlSettings(), loadGameSettings(), detectLayout()])
+      .then(async ([settings, game, layout]) => {
+        const tuned = applyTuning(drone, settings.droneTuning[drone.id]);
+        const sim = await Simulation.create({ env, drone: tuned, mode: requested && drone.flightModes.includes(requested) ? requested : drone.defaultMode, difficulty });
+        return [sim, settings, game, layout] as const;
+      })
+      .then(([sim, settings, game, layout]) => {
         if (cancelled) {
           sim.dispose();
           return;
         }
         sim.setWeather(wx);
         created = new FlightSession(sim, settings);
+        created.keyboard.setBindings(bindingsFor(settings.keyboard.layout === "auto" ? layout : settings.keyboard.layout, settings.keyboard.overrides));
         if (missionDef) {
-          created.setMission(missionDef);
+          created.setMission(missionDef, difficulty);
           created.onMissionEnd = (r) => void saveMissionResult(r);
         }
         created.attach(window);
-        if (debug) window.__session = created;
+        if (debug && DEBUG_ENABLED) window.__session = created;
         flushRef.current = makeFlusher(created);
         flushTimer = window.setInterval(() => flushRef.current?.(), 4000);
         const prevEnd = created.onMissionEnd;
@@ -123,7 +149,7 @@ export default function FlightView({ droneId, mode, quality, env: envId, weather
       created?.dispose();
       setSession(null);
     };
-  }, [droneId, mode, envId, weather, missionId, debug]);
+  }, [droneId, mode, envId, weather, missionId, difficultyParam, debug]);
 
   useEffect(() => {
     if (!session) return;
@@ -146,7 +172,7 @@ export default function FlightView({ droneId, mode, quality, env: envId, weather
     if (!session) return;
     const engine = new AudioEngine(gs.audio);
     audioRef.current = engine;
-    if (debug) window.__audio = engine;
+    if (debug && DEBUG_ENABLED) window.__audio = engine;
     const start = () => void engine.start();
     window.addEventListener("keydown", start);
     window.addEventListener("pointerdown", start);
@@ -223,11 +249,11 @@ export default function FlightView({ droneId, mode, quality, env: envId, weather
           <Hud session={session} />
         </div>
       )}
-      <div className="pointer-events-none absolute left-5 top-4 font-mono text-[11px] uppercase tracking-[0.2em] text-white/60">
+      <div className="pointer-events-none absolute left-5 top-4 font-mono text-[12px] uppercase tracking-[0.2em] text-white/80 [text-shadow:0_1px_3px_rgba(0,0,0,0.9)]">
         {session.sim.drone.name} / {session.sim.env.name} / {view.cameraMode === "fpv" ? "FPV" : "Chase"}
         {weatherLabel !== "calm" ? ` / Wind: ${weatherLabel}` : ""}
       </div>
-      <div ref={soundEl} data-testid="sound-hint" className="pointer-events-none absolute left-5 top-9 font-mono text-[10px] uppercase tracking-[0.2em] text-amber-300/80" />
+      <div ref={soundEl} data-testid="sound-hint" className="pointer-events-none absolute left-5 top-9 font-mono text-[11px] uppercase tracking-[0.2em] text-amber-300" />
       {view.hudVisible && a11y.showMinimap && !view.replaying && (
         <div className="pointer-events-none absolute left-5 top-14">
           <Minimap session={session} getMarkers={getMarkers} />
@@ -239,15 +265,11 @@ export default function FlightView({ droneId, mode, quality, env: envId, weather
       <Link href={session.mission ? "/missions" : "/"} className="absolute right-5 top-4 text-[11px] uppercase tracking-[0.2em] text-white/60 hover:text-white">
         Exit
       </Link>
-      {!view.launched && view.status === "flying" && !session.mission && (
-        <div className="pointer-events-none absolute inset-x-0 top-[18%] flex flex-col items-center gap-2 text-center font-mono text-xs uppercase tracking-[0.18em] text-white/80 [text-shadow:0_1px_3px_rgba(0,0,0,0.9)]">
-          <div>Arrow Up: throttle. Hold to take off</div>
-          <div className="text-white/55">Z/S pitch · Q/D roll · A/E yaw · X cut throttle · C camera · 1/2/3 mode · H hud · V replay · R reset · Space pause</div>
-        </div>
-      )}
+      {gs.gameplay.showHints && <ControlsHint session={session} view={view} />}
       {view.replaying && <Banner title="Replay" sub="V to exit · C camera · R restart" />}
-      {view.status === "paused" && !view.replaying && <Banner title="Paused" sub="Space to resume" />}
-      {view.status === "crashed" && !view.replaying && !session.mission && <Banner title="Crashed" sub="R to restart at spawn · V replay" tone="danger" />}
+      <StatusOverlays session={session} view={view} autoRestartSec={gs.gameplay.autoRestartSec} />
+      <PerfOverlay quality={q} panel={perfOpen} />
+      {helpOpen && <HelpOverlay session={session} onClose={() => setHelpOpen(false)} />}
     </div>
   );
 }
