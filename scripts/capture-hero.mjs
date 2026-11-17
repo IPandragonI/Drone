@@ -5,7 +5,10 @@
 import { chromium } from "playwright";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, rmSync, existsSync } from "node:fs";
-import ffmpeg from "ffmpeg-static";
+// ffmpeg is only needed for this offline step, so it is not a project dependency (its ~80 MB download would slow every install/deploy).
+// Install it first with:  npm i --no-save ffmpeg-static
+const ffmpeg = (await import("ffmpeg-static").catch(() => ({ default: null }))).default;
+if (!ffmpeg) throw new Error("ffmpeg-static is not installed. Run: npm i --no-save ffmpeg-static");
 
 const base = process.argv[2] ?? "http://localhost:3100";
 const seconds = Number(process.argv[3] ?? 26);
